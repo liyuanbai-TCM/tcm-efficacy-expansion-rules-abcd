@@ -1,25 +1,104 @@
 # TCM Efficacy Expansion Rules A-D
 
-This repository provides Python scripts for rule-based semantic expansion of Chinese herbal efficacy relations. The scripts implement Rules A-D to infer expanded herb-efficacy relations from explicit herb efficacy relations and a Traditional Chinese Medicine (TCM) knowledge graph.
+This repository provides Python scripts for rule-based semantic expansion of Chinese herbal efficacy relations using a Traditional Chinese Medicine (TCM) knowledge graph.
 
-## 1. Overview
+The scripts implement four semantic expansion rules (Rules A-D) and generate:
 
-Traditional Chinese herbal efficacy descriptions are often expressed in natural language. This makes them difficult to use directly in computational analysis, knowledge graph reasoning, and formula efficacy prediction.
+1. expanded herb-efficacy relation files; and
+2. rule-specific evidence-path files.
 
-This repository provides reproducible Python code for expanding explicit herb-efficacy relations into rule-based expanded efficacy relations. The expansion process uses semantic relations in a TCM knowledge graph, including `treated_by`, `manifests_as`, `includes`, and `transforms_to`.
-
-The generated results follow the same relation structure as the input herb-efficacy file:
+The generated relations follow the structure:
 
 ```text
 Chinese herb name --has_effect--> expanded effect
 ```
 
-Each rule script generates two output files:
+---
 
-1. an expanded herb-efficacy relation file
-2. a rule-specific evidence path file
+## 1. Important Update
 
-The evidence path files are used to record the reasoning paths that support the expanded herb-efficacy relations.
+### Rule C correction — July 29, 2026
+
+The implementation of Rule C has been corrected.
+
+The previous Rule C code used an overly broad set of symptom-related node types, including general symptom nodes such as:
+
+```text
+Symptom name
+Symptom (etiology)
+Symptom (symptom)
+Symptom (disease) (pattern)
+Symptom (symptom) (pattern)
+```
+
+This could lead to unsupported reverse inference from a general symptom to a specific disease or pattern.
+
+The corrected Rule C accepts only:
+
+```text
+Symptom (disease)
+Symptom (pattern)
+```
+
+The upstream node must be:
+
+```text
+Disease name
+Pattern name
+```
+
+Valid reasoning example:
+
+```text
+Chinese herb --has_effect--> Treat headache (liver deficiency)
+
+Treat headache (liver deficiency)
+<-treated_by-
+Headache (liver deficiency) [Symptom (pattern)]
+
+Liver deficiency [Pattern name]
+--manifests_as-->
+Headache (liver deficiency)
+
+Liver deficiency
+--treated_by-->
+Treat liver deficiency
+```
+
+Invalid reasoning example:
+
+```text
+Treat headache -> Treat liver deficiency
+```
+
+A general symptom such as `Headache [Symptom name]` does not explicitly identify a specific disease or pattern context and therefore cannot support Rule C reverse reasoning.
+
+**Rules A, B, and D remain unchanged.** Their Python scripts, reasoning logic, expanded relation files, and evidence files are not modified in this update.
+
+Using the following two input files derived from the Version 2.0 knowledge graph:
+
+```text
+herb_relations.csv
+background_kg_node_edges.csv
+```
+
+the corrected Rule C produces:
+
+```text
+Rule C expanded relations: 274
+Rule C evidence paths: 509
+Herbs with Rule C expansions: 197
+```
+
+Evidence-node distribution:
+
+```text
+Symptom (pattern): 441
+Symptom (disease): 68
+Symptom name: 0
+```
+
+---
 
 ## 2. Repository Contents
 
@@ -32,122 +111,17 @@ tcm-efficacy-expansion-rules-abcd/
 ├── rule_d_expansion.py
 ├── requirements.txt
 ├── README.md
+├── REPRODUCIBILITY.md
 ├── LICENSE
 └── .gitignore
 ```
+For detailed data-code-output mapping and reproduction instructions, see [REPRODUCIBILITY.md](REPRODUCIBILITY.md).
 
-## 3. Expansion Rules
+---
 
-### 3.1 Rule A: Symptom manifestation-based expansion
+## 3. Input Files and Data Preparation
 
-Rule A expands herbal efficacy nodes through disease or pattern manifestations.
-
-Logical path:
-
-```text
-Chinese herb name --has_effect--> original effect
-original effect <--treated_by-- Pattern name / Disease name
-Pattern name / Disease name --manifests_as--> Symptom (disease) / Symptom (pattern)
-Symptom (disease) / Symptom (pattern) --treated_by--> Rule A expanded effect
-```
-
-In Rule A, the first reverse lookup retains only nodes whose `source_LABEL` is:
-
-```text
-Pattern name
-Disease name
-```
-
-The `manifests_as` step retains only manifestation nodes whose `target_LABEL` is:
-
-```text
-Symptom (disease)
-Symptom (pattern)
-```
-
-### 3.2 Rule B: Hierarchical inclusion-based expansion
-
-Rule B expands herbal efficacy nodes through hierarchical inclusion relations of disease or pattern nodes.
-
-Logical path:
-
-```text
-Chinese herb name --has_effect--> original effect
-original effect <--treated_by-- Pattern name / Disease name
-Pattern name / Disease name --includes--> descendant nodes
-descendant nodes --treated_by--> Rule B expanded effect
-```
-
-Rule B recursively follows `includes` relations from disease or pattern seed nodes until no further descendant nodes can be found. All reachable descendant nodes are then used to infer expanded efficacy nodes through `treated_by` relations.
-
-### 3.3 Rule C: Reverse manifestation-based expansion
-
-Rule C expands herbal efficacy nodes through reverse manifestation reasoning from symptom-related nodes to their upstream disease, pattern, symptom, or etiology contexts.
-
-Logical path:
-
-```text
-Chinese herb name --has_effect--> original effect
-original effect <--treated_by-- symptom-related contextual nodes
-upstream nodes --manifests_as--> symptom-related contextual nodes
-upstream nodes --treated_by--> Rule C expanded effect
-```
-
-Rule C retains symptom-related contextual nodes. The allowed `source_LABEL` values include:
-
-```text
-Symptom (disease)
-Symptom (disease) (pattern)
-Symptom (etiology)
-Symptom (symptom)
-Symptom (symptom) (pattern)
-Symptom (pattern)
-Symptom name
-```
-
-Chinese label variants are also supported in the script.
-
-### 3.4 Rule D: Pathogenesis transformation-based expansion
-
-Rule D expands herbal efficacy nodes through transformation relations between disease or pattern nodes.
-
-Logical path:
-
-```text
-Chinese herb name --has_effect--> original effect
-original effect <--treated_by-- Pattern name / Disease name
-Pattern name / Disease name --transforms_to--> Pattern name / Disease name
-Pattern name / Disease name --treated_by--> Rule D expanded effect
-```
-
-In Rule D, both the source and target nodes of the `transforms_to` relation are strictly limited to:
-
-```text
-Pattern name
-Disease name
-```
-
-Nodes such as `Pattern (pattern)`, `Symptom (pattern)`, or other contextualized symptom or pattern nodes are not included in Rule D.
-
-## 4. Requirements
-
-Python 3.9 or later is recommended.
-
-Install the required Python package:
-
-```bash
-pip install -r requirements.txt
-```
-
-The required package is:
-
-```text
-pandas>=1.5
-```
-
-## 5. Input Files
-
-Before running the scripts, users need to prepare two CSV files:
+All four expansion scripts use the same two input files:
 
 ```text
 herb_relations.csv
@@ -156,28 +130,233 @@ background_kg_node_edges.csv
 
 These two files should be placed in the same folder as the Python scripts.
 
-The input files can be prepared in either of the following ways:
+Both files are derived from the same Version 2.0 TCM knowledge graph.
 
-1. Users may create their own CSV input files, as long as the required column structure and relation labels are preserved.
-2. Users may prepare the input files based on their own TCM knowledge graph or structured efficacy resources.
+### 3.1 Source knowledge-graph files
 
-
-This GitHub repository provides the Python implementation only. The input files required by the scripts can be prepared by users according to the required column structure, or derived from the deposited Zenodo dataset. In particular, the explicit herb-efficacy relation table can be used as the input `herb_relations.csv`, and the background node-annotated edge table should be prepared as `background_kg_node_edges.csv`.
+The Version 2.0 knowledge graph is deposited as:
 
 ```text
-Structured Dataset of Traditional Efficacies for Chinese Herbal Medicines, Version 2.0
-https://doi.org/10.5281/zenodo.20066842
+node-v2-eng260502.csv
+edge-v2-eng260502.csv
 ```
 
-### 5.1 `herb_relations.csv`
-
-This file contains the original explicit herb-efficacy relations. Each row should follow the structure:
+The node file contains:
 
 ```text
-Chinese herb name --has_effect--> effect
+ID
+ENGLISHNAME
+LABEL
 ```
 
-Required columns:
+The edge file contains:
+
+```text
+LID
+source_id
+target_id
+TYPE
+```
+
+The source knowledge graph contains:
+
+```text
+6,931 nodes
+16,708 relations
+```
+
+Related dataset:
+
+```text
+A Semantic Knowledge Graph Linking Diseases, Patterns, Symptoms, and Herbs
+for Traditional Chinese Medicine, Version 2.0
+
+DOI: 10.5281/zenodo.20061549
+```
+
+### 3.2 Preparing `background_kg_node_edges.csv`
+
+The file:
+
+```text
+background_kg_node_edges.csv
+```
+
+is an intermediate node-annotated edge table generated by merging the node table and edge table.
+
+The node table is merged twice:
+
+1. to attach the English name and semantic label of the source node;
+2. to attach the English name and semantic label of the target node.
+
+The resulting file contains:
+
+```text
+LID
+source_id
+source_ENGLISHNAME
+source_LABEL
+target_id
+target_ENGLISHNAME
+target_LABEL
+TYPE
+```
+
+This is the same `background_kg_node_edges.csv` file previously used to run Rules A-D.
+
+The corrected Rule C does not require a new knowledge-graph format.
+
+The file can be generated using:
+
+```python
+import pandas as pd
+
+
+def read_csv_auto(path):
+    for encoding in ["utf-8-sig", "utf-8", "gb18030", "gbk"]:
+        try:
+            return pd.read_csv(
+                path,
+                encoding=encoding,
+                dtype=str
+            ).fillna("")
+        except UnicodeDecodeError:
+            continue
+
+    return pd.read_csv(path, dtype=str).fillna("")
+
+
+nodes = read_csv_auto("node-v2-eng260502.csv")
+edges = read_csv_auto("edge-v2-eng260502.csv")
+
+source_nodes = nodes.rename(columns={
+    "ID": "source_id",
+    "ENGLISHNAME": "source_ENGLISHNAME",
+    "LABEL": "source_LABEL"
+})[
+    ["source_id", "source_ENGLISHNAME", "source_LABEL"]
+]
+
+target_nodes = nodes.rename(columns={
+    "ID": "target_id",
+    "ENGLISHNAME": "target_ENGLISHNAME",
+    "LABEL": "target_LABEL"
+})[
+    ["target_id", "target_ENGLISHNAME", "target_LABEL"]
+]
+
+background = (
+    edges
+    .merge(source_nodes, on="source_id", how="left")
+    .merge(target_nodes, on="target_id", how="left")
+)
+
+background = background[
+    [
+        "LID",
+        "source_id",
+        "source_ENGLISHNAME",
+        "source_LABEL",
+        "target_id",
+        "target_ENGLISHNAME",
+        "target_LABEL",
+        "TYPE"
+    ]
+]
+
+background.to_csv(
+    "background_kg_node_edges.csv",
+    index=False,
+    encoding="utf-8-sig"
+)
+
+print("Knowledge-graph relations:", len(background))
+```
+
+Expected result:
+
+```text
+Knowledge-graph relations: 16708
+```
+
+### 3.3 Preparing `herb_relations.csv`
+
+The file:
+
+```text
+herb_relations.csv
+```
+
+contains the original explicit herb-efficacy relations used as the starting point for Rules A-D.
+
+These relations are extracted from `background_kg_node_edges.csv` using:
+
+```text
+TYPE = has_effect
+source_LABEL = Chinese herb name
+target_LABEL = effect
+```
+
+This extraction produces:
+
+```text
+7,912 explicit herb-efficacy relations
+483 Chinese herbs
+```
+
+The extracted relations correspond to the deposited file:
+
+```text
+explicit_herb_efficacy_relations_v2.csv
+```
+
+in:
+
+```text
+Structured Dataset of Traditional Efficacies for Chinese Herbal Medicines,
+Version 2.1
+
+DOI: 10.5281/zenodo.22168291
+```
+
+Therefore, `herb_relations.csv` is not an independent data source. It is the explicit herb-efficacy subset extracted from the Version 2.0 knowledge graph.
+
+Users may prepare `herb_relations.csv` in either of the following ways:
+
+1. extract it from `background_kg_node_edges.csv`; or
+2. copy `explicit_herb_efficacy_relations_v2.csv` and rename the copy as `herb_relations.csv`.
+
+Extraction code:
+
+```python
+herb_relations = background[
+    (background["TYPE"] == "has_effect")
+    & (background["source_LABEL"] == "Chinese herb name")
+    & (background["target_LABEL"] == "effect")
+].copy()
+
+herb_relations["Efficacy_Node_Type"] = "Explicit efficacy nodes"
+
+herb_relations.to_csv(
+    "herb_relations.csv",
+    index=False,
+    encoding="utf-8-sig"
+)
+
+print("Explicit herb-efficacy relations:", len(herb_relations))
+print("Chinese herbs:", herb_relations["source_id"].nunique())
+```
+
+Expected result:
+
+```text
+Explicit herb-efficacy relations: 7912
+Chinese herbs: 483
+```
+
+### 3.4 Required columns
+
+The expansion scripts require the following columns in both input files:
 
 ```text
 source_id
@@ -189,176 +368,343 @@ target_LABEL
 TYPE
 ```
 
-The `TYPE` value for herb-efficacy relations should be:
+`LID` and `Efficacy_Node_Type` may also be retained when present.
+
+---
+
+## 4. Expansion Rules
+
+### 4.1 Rule A: Symptom-Manifestation Propagation
+
+Rule A expands efficacy knowledge from a disease or pattern to its contextualized manifestations.
 
 ```text
-has_effect
+Chinese herb --has_effect--> original effect
+original effect <--treated_by-- Pattern name / Disease name
+Pattern name / Disease name --manifests_as--> Symptom (pattern) / Symptom (disease)
+Symptom (pattern) / Symptom (disease) --treated_by--> expanded effect
 ```
 
-The `source_LABEL` value should usually be:
+Rule A uses only:
 
 ```text
-Chinese herb name
+Pattern name
+Disease name
+Symptom (pattern)
+Symptom (disease)
 ```
 
-The `target_LABEL` value should usually be:
+General `Symptom name` nodes are not used in Rule A.
+
+### 4.2 Rule B: Hierarchical Inheritance
+
+Rule B propagates efficacy knowledge through hierarchical `includes` relations.
 
 ```text
-effect
+Chinese herb --has_effect--> original effect
+original effect <--treated_by-- Pattern name / Disease name
+Pattern name / Disease name --includes--> descendant node
+descendant node --treated_by--> expanded effect
 ```
 
-The file may contain one herb, multiple herbs, or all herbs. The scripts process herbs by `source_id`.
+The script recursively follows all reachable `includes` descendants while preventing loops.
 
-### 5.2 `background_kg_node_edges.csv`
+### 4.3 Rule C: Reverse Contextualized Reasoning
 
-This file contains the background TCM knowledge graph relations with node IDs, node names, node labels, and relation types.
-
-Required columns:
+Rule C traces a contextualized symptom-level efficacy back to its explicitly associated disease or pattern.
 
 ```text
-source_id
-source_ENGLISHNAME
-source_LABEL
-target_id
-target_ENGLISHNAME
-target_LABEL
-TYPE
+Chinese herb --has_effect--> original effect
+original effect <--treated_by-- Symptom (pattern) / Symptom (disease)
+Pattern name / Disease name --manifests_as--> Symptom (pattern) / Symptom (disease)
+Pattern name / Disease name --treated_by--> expanded effect
 ```
 
-The background graph should include semantic relations among diseases, patterns, symptoms, etiologies, and efficacy nodes. The scripts use semantic relations such as:
+Allowed symptom node types:
 
 ```text
-treated_by
-manifests_as
-includes
-transforms_to
+Symptom (pattern)
+Symptom (disease)
 ```
 
-Note: The scripts require a node-annotated edge table named `background_kg_node_edges.csv`. This means that both source and target nodes should contain IDs, English names, semantic labels, and relation types.
-
-### 5.3 Important note on file names
-
-The input file names are fixed in the scripts. Please either:
-
-1. rename your input files as:
+Allowed upstream node types:
 
 ```text
+Pattern name
+Disease name
+```
+
+Excluded node types include:
+
+```text
+Symptom name
+Symptom (etiology)
+Symptom (symptom)
+Symptom (disease) (pattern)
+Symptom (symptom) (pattern)
+```
+
+These exclusions prevent unsupported reverse inference from a general or differently contextualized symptom to a specific disease or pattern.
+
+### 4.4 Rule D: Pathogenesis Transformation Mapping
+
+Rule D extends efficacy knowledge through one-step disease or pattern transformation relations.
+
+```text
+Chinese herb --has_effect--> original effect
+original effect <--treated_by-- Pattern name / Disease name
+Pattern name / Disease name --transforms_to--> Pattern name / Disease name
+Pattern name / Disease name --treated_by--> expanded effect
+```
+
+Both the seed node and transformed node are restricted to:
+
+```text
+Pattern name
+Disease name
+```
+
+---
+
+## 5. Requirements
+
+Python 3.9 or later is recommended.
+
+Install the required package:
+
+```bash
+pip install -r requirements.txt
+```
+
+Current requirement:
+
+```text
+pandas>=1.5
+```
+
+---
+
+## 6. How to Run
+
+Place the following files in the same folder:
+
+```text
+rule_a_expansion.py
+rule_b_expansion.py
+rule_c_expansion.py
+rule_d_expansion.py
 herb_relations.csv
 background_kg_node_edges.csv
 ```
 
-or
+Run each rule separately:
 
-2. modify the following lines in each Python script before running:
+```bash
+python rule_a_expansion.py
+python rule_b_expansion.py
+python rule_c_expansion.py
+python rule_d_expansion.py
+```
+
+The input file names are fixed in the scripts:
 
 ```python
 herb_file = Path("herb_relations.csv")
 background_file = Path("background_kg_node_edges.csv")
 ```
 
-## 6. How to Run
-
-Run Rule A:
-
-```bash
-python rule_a_expansion.py
-```
-
-Run Rule B:
-
-```bash
-python rule_b_expansion.py
-```
-
-Run Rule C:
-
-```bash
-python rule_c_expansion.py
-```
-
-Run Rule D:
-
-```bash
-python rule_d_expansion.py
-```
+---
 
 ## 7. Output Files
 
-Each rule script generates two output files: an expanded relation file and an evidence path file.
-
-### 7.1 Rule A outputs
+### Rule A
 
 ```text
-herb_relations_Rule_A_expanded_nodes.csv
-Rule_A_evidence_paths.csv
+expanded_herb_efficacy_relations_ruleA_v2.csv
+herb_efficacy_expansion_evidence_ruleA_v2.csv
 ```
 
-### 7.2 Rule B outputs
+### Rule B
 
 ```text
-herb_relations_Rule_B_expanded_nodes.csv
-Rule_B_evidence_paths.csv
+expanded_herb_efficacy_relations_ruleB_v2.csv
+herb_efficacy_expansion_evidence_ruleB_v2.csv
 ```
 
-### 7.3 Rule C outputs
+### Corrected Rule C
 
 ```text
 herb_relations_Rule_C_expanded_nodes.csv
 Rule_C_evidence_paths.csv
 ```
 
-### 7.4 Rule D outputs
+### Rule D
 
 ```text
-herb_relations_Rule_D_expanded_nodes.csv
-Rule_D_evidence_paths.csv
+expanded_herb_efficacy_relations_ruleD_v2.csv
+herb_efficacy_expansion_evidence_ruleD_v2.csv
 ```
 
-The expanded relation files contain the final herb-to-expanded-efficacy relations. The evidence path files record the rule-specific reasoning paths supporting these expanded relations.
+The expanded relation files contain the final herb-to-expanded-efficacy relations.
 
-The released expanded relation files and rule-specific evidence path files generated using these scripts are deposited in:
+The evidence-path files retain the original efficacy and intermediate knowledge-graph nodes supporting each expanded relation.
 
-```text
-Structured Dataset of Traditional Efficacies for Chinese Herbal Medicines, Version 2.0
-https://doi.org/10.5281/zenodo.20066842
-```
+A single final herb-efficacy relation may have more than one evidence path.
+
+---
 
 ## 8. Deduplication Strategy
 
-For each rule, expanded efficacy nodes are compared with the original efficacy nodes of the herb. If an expanded `target_id` already exists in the original `herb_relations.csv`, it is removed and not exported as a newly expanded node.
+For each herb, an inferred efficacy is excluded when the same `target_id` already exists among that herb's explicit efficacy relations.
 
-Within each rule output, duplicated expanded efficacy relations are also removed. The final exported relation table keeps only one record for the same:
+The final relation files retain one record for each:
 
 ```text
 source_id + target_id + TYPE
 ```
 
-The evidence path tables may contain repeated expanded efficacy nodes because the same expanded efficacy relation may be supported by multiple reasoning paths. These repeated evidence paths are retained for traceability.
+The evidence files retain distinct reasoning paths for provenance and traceability.
 
-## 9. Related Dataset
+---
 
-The released expanded herb-efficacy relation files and the corresponding rule-specific evidence path files are deposited in Zenodo:
+## 9. Reproducibility Check
+
+Using the Version 2.0 source data, the expected output sizes are:
+
+| Rule | Expanded relations | Evidence paths | Status |
+|---|---:|---:|---|
+| Rule A | 15,223 | 15,223 | Unchanged |
+| Rule B | 4,229 | 4,327 | Unchanged |
+| Rule C | 274 | 509 | Corrected |
+| Rule D | 1,182 | 1,209 | Unchanged |
+
+For corrected Rule C, the evidence file must contain only:
 
 ```text
-Structured Dataset of Traditional Efficacies for Chinese Herbal Medicines, Version 2.0
-https://doi.org/10.5281/zenodo.20066842
+Symptom (pattern)
+Symptom (disease)
 ```
 
-## 10. Related Publication
-
-Please consider citing the following publication if you refer to our specific methodologies, construction logic, or prediction models:
+Expected Rule C evidence-node distribution:
 
 ```text
-Yuanbai L, Fangzhou L, Yihao L, Yu D, Meng L, Qin Q, Yang Y, Hongming M.
-A Knowledge Graph-Driven Hypergeometric Efficacy Prediction Model for Classical Traditional Chinese Herbal Formulas.
-Methods Inf Med. 2026 Apr 7. doi: 10.1055/a-2841-4549. Epub ahead of print. PMID: 41895302.
+Symptom (pattern): 441
+Symptom (disease): 68
 ```
 
-## 11. License
+If `Symptom name` or other symptom-related node types appear in the Rule C evidence file, the earlier Rule C implementation may have been used.
+
+---
+
+## 10. Mapping Between Scripts and Released Files
+
+| GitHub script | Expanded relation file | Evidence file | Status |
+|---|---|---|---|
+| `rule_a_expansion.py` | `expanded_herb_efficacy_relations_ruleA_v2.csv` | `herb_efficacy_expansion_evidence_ruleA_v2.csv` | Unchanged |
+| `rule_b_expansion.py` | `expanded_herb_efficacy_relations_ruleB_v2.csv` | `herb_efficacy_expansion_evidence_ruleB_v2.csv` | Unchanged |
+| `rule_c_expansion.py` | `expanded_herb_efficacy_relations_ruleC_v2.1.csv` | `herb_efficacy_expansion_evidence_ruleC_v2.1.csv` | Corrected |
+| `rule_d_expansion.py` | `expanded_herb_efficacy_relations_ruleD_v2.csv` | `herb_efficacy_expansion_evidence_ruleD_v2.csv` | Unchanged |
+
+The released Rule A, B, and D files remain unchanged.
+
+The corrected Rule C relation and evidence files are deposited in Version 2.1 of the expanded efficacy dataset.
+
+---
+
+## 11. Version History
+
+### Version 1.0
+
+Version 1.0 used a single-table structure containing explicit and expanded herb-efficacy relations.
+
+### Version 2.0
+
+Version 2.0 introduced:
+
+1. separate files for explicit herb-efficacy relations;
+2. separate files for Rules A-D;
+3. rule-specific evidence-path files;
+4. the `Efficacy_Node_Type` field;
+5. preservation of rule-specific provenance;
+6. terminology and structural alignment with the Version 2.0 knowledge graph.
+
+Rules A, B, and D retained their intended reasoning logic.
+
+### Version 2.1 — Rule C correction
+The intended Rule C logic is reverse contextualized reasoning from:
+
+```text
+Symptom (pattern)
+Symptom (disease)
+```
+
+to the explicitly linked:
+
+```text
+Pattern name
+Disease name
+```
+
+The previous Rule C implementation unintentionally included general and other symptom-related node types.
+
+The corrected implementation restores the intended Rule C scope.
+
+Because the correction changes the Rule C relation and evidence files, the corrected Rule C data were released as Version 2.1 rather than silently replacing the earlier Version 2.0 files.
+
+---
+
+## 12. Interpretation and Limitations
+
+The expanded relations are rule-based semantic inferences and should not be interpreted as direct clinical trial evidence.
+
+- Rule A depends on the accuracy and specificity of `manifests_as` relations.
+- Rule B depends on the direction and correctness of the `includes` hierarchy.
+- Rule C requires explicit disease- or pattern-contextualized symptom nodes.
+- Rule D depends on the accuracy of one-step `transforms_to` relations.
+
+The evidence-path files are provided to support traceability and expert review.
+
+---
+
+## 13. Related Resources
+
+### Knowledge graph
+
+```text
+A Semantic Knowledge Graph Linking Diseases, Patterns, Symptoms, and Herbs
+for Traditional Chinese Medicine, Version 2.0
+
+DOI: 10.5281/zenodo.20061549
+```
+
+### Expanded efficacy dataset
+
+```text
+Structured Dataset of Traditional Efficacies for Chinese Herbal Medicines,
+Version 2.1
+
+DOI: 10.5281/zenodo.22168291
+```
+
+### Related publication
+
+```text
+Li Y, Li F, Li Y, Du Y, Li M, Qin Q, Yang Y, Ma H.
+A Knowledge Graph-Driven Hypergeometric Efficacy Prediction Model for
+Classical Traditional Chinese Herbal Formulas.
+Methods in Information in Medicine. 2026.
+DOI: 10.1055/a-2841-4549.
+```
+
+---
+
+## 14. License
 
 This repository is released under the MIT License.
 
-## 12. Contact
+---
+
+## 15. Contact
 
 For questions, please contact:
 
